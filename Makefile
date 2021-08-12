@@ -7,7 +7,8 @@ OBJS:= singlelink_list.o
 .PHONY:clean
 
 singlelink_list: $(OBJS)
-	$(CC) -o $@ $^ $(LDFLAGS) $(LIBS)
+	$(CC) -o $@ $^ $(LDFLAGS) $(LIBS)    
+
 %*.o: %*.c
 	$(CC) -o $@ $^ $(CFLAGS)
 
