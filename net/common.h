@@ -7,8 +7,12 @@
 
 #define BUF_SIZE    1024
 
-#define LOG printf
 
+#define LOG_DEBUG   printf
+#define LOG_WARN    printf
+#define LOG_ERROR   printf
+
+#define LOG         LOG_DEBUG
 
 
 #endif //__COMMON_H__

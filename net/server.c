@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -43,6 +42,9 @@ static void sig_hdl(int sig)
     int getsockname(int sockfd,struct sockaddr*address,socklen_t*address_len);
     int getpeername(int sockfd,struct sockaddr*address,socklen_t*address_len);
     
+    int getsockopt(int sockfd,int level,int option_name,void*option_value,socklen_t*restrict option_len);
+    int setsockopt(int sockfd,int level,int option_name,const void*option_value,socklen_t option_len);
+    
     /*************************  Client step  *************************/
     // 创建socket  < linux 2.6.17起，type支持SOCK_NONBLOCK和SOCK_CLOEXEC对应值 >
     int socket(int domain,int type,int protocol);  
@@ -63,6 +65,7 @@ int main(int argc, char *argv[])
     int ret = -1;
     int sfd = -1;
     int confd = -1;
+    int reuse = 1;
     struct sockaddr_in addr = {};
     struct sockaddr_in client_addr = {};
     socklen_t addr_len = sizeof(client_addr);
@@ -75,6 +78,11 @@ int main(int argc, char *argv[])
     if((sfd = socket(PF_INET, SOCK_STREAM, 0)) < 0){
         LOG("socker error.%s \n", strerror(errno));
         return -1;
+    }
+    
+    if(setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse))) {
+        LOG_ERROR("setsockopt error.%s \n", strerror(errno));
+        goto out;
     }
     
     addr.sin_family = AF_INET;

@@ -40,6 +40,9 @@ static void sig_hdl(int sig)
     ssize_t recv(int sockfd,void*buf,size_t len,int flags);
     ssize_t send(int sockfd,const void*buf,size_t len,int flags);
     
+    int getsockopt(int sockfd,int level,int option_name,void*option_value,socklen_t*restrict option_len);
+    int setsockopt(int sockfd,int level,int option_name,const void*option_value,socklen_t option_len);
+    
     /*************************  Client step  *************************/
     // 创建socket  < linux 2.6.17起，type支持SOCK_NONBLOCK和SOCK_CLOEXEC对应值 >
     int socket(int domain,int type,int protocol);  
@@ -71,6 +74,7 @@ int main(int argc, char *argv[])
         return -1;
     }
     
+    
     ser_addr.sin_family = AF_INET;
     ser_addr.sin_port = htons(SERVER_PORT);
     inet_pton(AF_INET, SERVER_IP, &ser_addr.sin_addr);
@@ -98,7 +102,7 @@ int main(int argc, char *argv[])
     
     ret = 0;
 
-    
+    sleep(10);
     if(sfd > 0){
         close (sfd);
         //shutdown();
