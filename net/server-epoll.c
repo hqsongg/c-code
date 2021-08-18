@@ -44,6 +44,13 @@ static void sig_hdl(int sig)
     
     int getsockopt(int sockfd,int level,int option_name,void*option_value,socklen_t*restrict option_len);
     int setsockopt(int sockfd,int level,int option_name,const void*option_value,socklen_t option_len);
+	
+	// 创建内核事件表
+	int epoll_create(int size);
+	// 操作epoll的内核事件表
+	int epoll_ctl(int epfd,int op,int fd,struct epoll_event*event)
+	// 在指定超时时间内等待一组文件描述符上的事件
+	int epoll_wait(int epfd,struct epoll_event*events,int maxevents,int timeout);
     
     /*************************  Client step  *************************/
     // 创建socket  < linux 2.6.17起，type支持SOCK_NONBLOCK和SOCK_CLOEXEC对应值 >
