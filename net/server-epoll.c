@@ -78,6 +78,8 @@ int main(int argc, char *argv[])
     socklen_t addr_len = sizeof(client_addr);
     char peer_ip[INET_ADDRSTRLEN] = ""; 
     char buf[BUF_SIZE] = "";
+	int epfd = -1;
+	struct epoll_event events = {}; 
     
     LOG("Server start !\n");
     signal(SIGTERM, sig_hdl);
@@ -125,7 +127,26 @@ int main(int argc, char *argv[])
     
     LOG("peer IP:%s PORT=%d \n", 
         inet_ntop(AF_INET, &client_addr.sin_addr, peer_ip, INET_ADDRSTRLEN), ntohs(client_addr.sin_port));
-    
+
+	epfd = epoll_create(10);
+	if(epfd < 0){
+		LOG("epoll_create error.");
+		goto out;
+	}
+	
+	event.events = EPOLLIN|EPOLLOUT;
+	event.data.fd = confdl;
+	ret = epoll_ctl(epfd, EPOLL_CTL_ADD, confd, &event);
+	if(ret < -1){
+		LOG("epoll_ctl error.\n");
+		close(epfd);
+		goto out;
+	}
+	ret = epoll_wait(epfd, &);
+
+	int epoll_wait(int epfd,struct epoll_event*events,int maxevents,int timeout);
+		
+#if 0
     sprintf(buf, "%s", "data from server");
     ret = send(confd, buf, sizeof(buf), 0);
     if(ret <= 0){
@@ -139,7 +160,7 @@ int main(int argc, char *argv[])
         LOG("recv error.%s \n", strerror(errno));
     }
     LOG("recv from client success. byte=%d : %s\n", ret, buf);
-    
+#endif     
     LOG("Server exit !\n");
     
  
