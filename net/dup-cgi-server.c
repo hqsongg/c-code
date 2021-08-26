@@ -59,6 +59,7 @@ int main(int argc, char *argv[])
     sleep (5);
     
 out:
+    // 描述符关闭太早的话，客户端接收不到printf 信息。
     close(sockfd);
     close(confd);
     //close(fd);

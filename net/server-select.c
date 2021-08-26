@@ -77,6 +77,9 @@ int main(int argc, char *argv[])
     char peer_ip[INET_ADDRSTRLEN] = ""; 
     char buf[BUF_SIZE] = "";
     
+    fd_set read_fds;
+    fd_set exception_fds;
+    
     LOG("Server start !\n");
     signal(SIGTERM, sig_hdl);
     
@@ -123,13 +126,23 @@ int main(int argc, char *argv[])
     
     LOG("peer IP:%s PORT=%d \n", 
         inet_ntop(AF_INET, &client_addr.sin_addr, peer_ip, INET_ADDRSTRLEN), ntohs(client_addr.sin_port));
+        
+
+    FD_ZERO(&read_fds);
+    FD_ZERO(&exception_fds);
     
-    sprintf(buf, "%s", "data from server");
-    ret = send(confd, buf, sizeof(buf), 0);
-    if(ret <= 0){
-        LOG("send error.%s \n", strerror(errno));
+    while(!stop) {
+        FD_SET(confd, &read_fds);
+        FD_SET(confd, &exception_fds);
+        
+        //select(confd+1, &read_fds, NULL, &exception_fds, 0);
+        
+        //pthread_create ();
+        
     }
-    LOG("send success. byte=%d ", ret);
+    
+    
+    
     
     bzero(buf, sizeof(buf));
     ret = recv(confd, buf, sizeof(buf), 0);
