@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <sys/select.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -65,20 +66,54 @@ static void sig_hdl(int sig)
     
 #endif 
 
+
+int do_worker(int confd, fd_set *prfds)
+{
+    int ret = 0;
+    char rcv_buf[BUF_SIZE] = "";
+    char snd_buf[BUF_SIZE] = "";
+
+    ret = recv(confd, rcv_buf, sizeof(rcv_buf), 0);
+    if(ret <= 0){
+        LOG("recv error.%s .errno=%d  \n", strerror(errno), errno);
+        //goto out;
+        close(confd);
+        FD_CLR(confd, prfds);
+    }
+
+    //bzero(snd_buf, sizeof(snd_buf));
+    sprintf(snd_buf, "Respon from from server seq=%s. \n", rcv_buf);
+    ret = send(confd, snd_buf, sizeof(snd_buf), 0);
+    if(ret <= 0){
+        LOG("recv error.%s \n", strerror(errno));
+        close(confd);
+        FD_CLR(confd, prfds);
+    }
+
+    return 0;
+}
+
+ 
 int main(int argc, char *argv[])
 {
     int ret = -1;
     int sfd = -1;
     int confd = -1;
+    int maxfd = -1;
+    int i = -1;
     int reuse = 1;
     struct sockaddr_in addr = {};
     struct sockaddr_in client_addr = {};
     socklen_t addr_len = sizeof(client_addr);
-    char peer_ip[INET_ADDRSTRLEN] = ""; 
-    char buf[BUF_SIZE] = "";
+    int port = 0;
+    char peer_ip[INET_ADDRSTRLEN] = "";
     
     fd_set read_fds;
+    fd_set write_fds;
     fd_set exception_fds;
+    fd_set tmp_rfds;
+    fd_set tmp_wfds;
+    fd_set tmp_xfds;
     
     LOG("Server start !\n");
     signal(SIGTERM, sig_hdl);
@@ -101,59 +136,65 @@ int main(int argc, char *argv[])
         LOG("bind error.%s \n", strerror(errno));
         goto out; 
     }
-    
+   
     if(listen(sfd, 5)){
         LOG("listen error.%s \n", strerror(errno));
         goto out; 
     }
     
-    confd = accept(sfd, (struct sockaddr *)&client_addr, &addr_len);
-    if(confd < 0){
-        LOG("accept error.%s \n", strerror(errno));
-        goto out; 
-    } 
-    
-    //inet_ntop(AF_INET, &client_addr.sin_addr, peer_ip, INET_ADDRSTRLEN);
-    LOG("connected with client. client IP:%s PORT=%d \n", 
-        inet_ntop(AF_INET, &client_addr.sin_addr, peer_ip, INET_ADDRSTRLEN), ntohs(client_addr.sin_port));
-    
-    bzero(&client_addr, sizeof(client_addr));
-    bzero(peer_ip, sizeof(peer_ip));
-    if(getpeername(confd, (struct sockaddr*)&client_addr, &addr_len)){
-         LOG("getpeername error.%s ", strerror(errno));
-         goto out;
-    }
-    
-    LOG("peer IP:%s PORT=%d \n", 
-        inet_ntop(AF_INET, &client_addr.sin_addr, peer_ip, INET_ADDRSTRLEN), ntohs(client_addr.sin_port));
-        
-
     FD_ZERO(&read_fds);
-    FD_ZERO(&exception_fds);
+    FD_ZERO(&write_fds);
+    //FD_ZERO(&exception_fds);
+    FD_SET(sfd, &read_fds);
+    FD_SET(sfd, &write_fds);
+    //FD_SET(sfd, &exception_fds);
+    tmp_rfds = read_fds;
+    tmp_wfds = write_fds;
     
-    while(!stop) {
-        FD_SET(confd, &read_fds);
-        FD_SET(confd, &exception_fds);
+    maxfd = sfd;
+
+    
+    while(!stop) { 
+        //LOG("call select ... \n");
         
-        //select(confd+1, &read_fds, NULL, &exception_fds, 0);
+        // 重新设置描述符集合
+        read_fds = tmp_rfds;
+        write_fds = tmp_wfds;
         
-        //pthread_create ();
+        /* select将更新这个集合,把其中不可读的套节字去掉,
+         * 只保留符合条件的套节字在这个集合里面，故每次需要重新设置集合
+        */
+        ret = select(maxfd+1, &read_fds, NULL, NULL, 0);
+        if (ret < 0){
+            LOG("select error. %s \n", strerror(errno));
+            goto out;
+        }
         
+        //判断sfd是否在可读集合中
+        if(FD_ISSET(sfd, &read_fds)){
+            confd = accept(sfd, (struct sockaddr*)&client_addr, &addr_len);
+            if(confd < 0){
+                LOG("accept error.%s \n", strerror(errno));
+                goto out;
+            }
+            inet_ntop(AF_INET, &client_addr.sin_addr, peer_ip, INET_ADDRSTRLEN);
+            port = ntohs(client_addr.sin_port);
+            LOG("accept confd=%d --> %s:%d  \n", confd, peer_ip, port);
+            
+            //将新的连接描述符加入到监听集合中
+            FD_SET(confd, &tmp_rfds);
+            maxfd = (confd > maxfd) ? confd : maxfd;
+        }
+        
+        for(i=sfd+1; i<=maxfd; i++){
+            if(FD_ISSET(i, &read_fds)){
+                 do_worker(i, &tmp_rfds);
+            } 
+        }
     }
-    
-    
-    
-    
-    bzero(buf, sizeof(buf));
-    ret = recv(confd, buf, sizeof(buf), 0);
-    if(ret <= 0){
-        LOG("recv error.%s \n", strerror(errno));
-    }
-    LOG("recv from client success. byte=%d : %s\n", ret, buf);
     
     LOG("Server exit !\n");
-    
- 
+
     sleep (5);
     ret = 0;
 out:

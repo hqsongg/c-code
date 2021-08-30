@@ -62,6 +62,7 @@ int main(int argc, char *argv[])
 {
     int ret = -1;
     int sfd = -1;
+    int seq = 0;
     char buf[BUF_SIZE] = "";
     struct sockaddr_in ser_addr = {};
     socklen_t addr_len = sizeof(ser_addr);
@@ -73,8 +74,7 @@ int main(int argc, char *argv[])
         LOG("socker error.%s \n", strerror(errno));
         return -1;
     }
-    
-    
+
     ser_addr.sin_family = AF_INET;
     ser_addr.sin_port = htons(SERVER_PORT);
     inet_pton(AF_INET, SERVER_IP, &ser_addr.sin_addr);
@@ -84,25 +84,29 @@ int main(int argc, char *argv[])
         return -1; 
     }
     
-    sprintf(buf, "%s", "data from client");
-    ret = send(sfd, buf, sizeof(buf), 0);
-    if(ret <= 0){
-        LOG("send error.%s \n", strerror(errno));
+    while(1) {
+       //sprintf(buf, "%s", "data from client");
+       sprintf(buf, "%d", seq++);
+        ret = send(sfd, buf, sizeof(buf), 0);
+        if(ret < 0){
+            LOG("send error.%s \n", strerror(errno));
+        }
+        //LOG("send success. byte=%d \n", ret);
+        
+        bzero(buf, sizeof(buf));
+        ret = recv(sfd, buf, sizeof(buf), 0);
+        if(ret < 0){
+            LOG("recv error.%s .\n", strerror(errno));
+        }
+        LOG("recv success. byte=%d . %s \n", ret, buf);
+        sleep(1);
     }
-    LOG("send success. byte=%d ", ret);
-    
-    bzero(buf, sizeof(buf));
-    ret = recv(sfd, buf, sizeof(buf), 0);
-    if(ret <= 0){
-        LOG("recv error.%s \n", strerror(errno));
-    }
-    LOG("recv success. byte=%d . %s \n", ret, buf);
     
     LOG("Client exit !\n");
     
     ret = 0;
 
-    sleep(10);
+    sleep(2);
     if(sfd > 0){
         close (sfd);
         //shutdown();
