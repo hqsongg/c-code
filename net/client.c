@@ -85,8 +85,8 @@ int main(int argc, char *argv[])
     }
     
     while(1) {
-       //sprintf(buf, "%s", "data from client");
-       sprintf(buf, "%d", seq++);
+       sprintf(buf, "%s", "data from client");
+       //sprintf(buf, "%d", seq++);
         ret = send(sfd, buf, sizeof(buf), 0);
         if(ret < 0){
             LOG("send error.%s \n", strerror(errno));

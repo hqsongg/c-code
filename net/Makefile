@@ -4,7 +4,7 @@ LDFLAGS:=
 LIBS:=
 SER_OBJS:= server.o
 CLI_OBJS:= client.o
-TARGETS:= server client pipe cgi-server server-select
+TARGETS:= server client pipe cgi-server server-select server-epoll
 
 
 .PHONY:clean all 
@@ -30,5 +30,9 @@ cgi-server: dup-cgi-server.o
 server-select: server-select.o
 	$(CC) -o $@ $^ $(LDFLAGS) $(LIBS) 
 
+server-epoll: server-epoll.o
+	$(CC) -o $@ $^ $(LDFLAGS) $(LIBS) 
+    
+    
 clean:
 	-rm -rf *.o $(TARGETS) 
