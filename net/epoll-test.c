@@ -35,7 +35,7 @@ int setnonblocking(int fd)
 /*将文件描述符fd上的EPOLLIN注册到epollfd指示的epoll内核事件表中， 参数enable_et指定是否对fd启用ET模式*/
 void addfd(int epollfd, int fd, bool enable_et)
 {
-    epoll_event event;
+    struct epoll_event event = {};
     event.data.fd=fd;
     event.events=EPOLLIN;
     if(enable_et){
@@ -44,6 +44,7 @@ void addfd(int epollfd, int fd, bool enable_et)
     epoll_ctl(epollfd,EPOLL_CTL_ADD,fd, &event);
     setnonblocking(fd);
 }
+
 
 
 /*LT模式的工作流程*/
@@ -131,6 +132,7 @@ int main(int argc,char*argv[])
     int port=atoi(argv[2]);
     int ret=0;
     struct sockaddr_in address;
+    
     bzero( &address,sizeof(address));
     address.sin_family=AF_INET;
     inet_pton(AF_INET,ip, &address.sin_addr);
@@ -145,6 +147,7 @@ int main(int argc,char*argv[])
     int epollfd=epoll_create(5);
     assert(epollfd!=-1);
     addfd(epollfd,listenfd,true);
+    
     while(1)
     {
         int ret=epoll_wait(epollfd,events,MAX_EVENT_NUMBER,-1);

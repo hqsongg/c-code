@@ -9,18 +9,30 @@
 #include <sys/epoll.h>
 #include <signal.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <errno.h>
 
 #include "common.h"
 
 
 #define MAX_EVENT_NUMBER 1024
-
-
 static int stop = 0;
+
+
+int event_ctl(int epfd, int op, int fd, int events);
+int do_worker_lt(int confd);
+int do_worker_et(int confd);
+int setnoblocking(int fd);
+int event_ctl(int epfd, int op, int fd, int events);
+
+
+
+
 
 static void sig_hdl(int sig)
 {
+    
     stop = 1;
 }
 
@@ -55,7 +67,8 @@ static void sig_hdl(int sig)
     int epoll_create(int size);
     // 操作内核事件表
     int epoll_ctl(int epfd,int op,int fd,struct epoll_event*event);
-    
+    // 一段时间内等待描述符
+    int epoll_wait(int epfd,struct epoll_event*events,int maxevents,int timeout);
     
     
     /*************************  Client step  *************************/
@@ -74,26 +87,16 @@ static void sig_hdl(int sig)
 #endif 
 
 
-int do_worker(int confd)
+
+
+int event_ctl(int epfd, int op, int fd, int events)
 {
-    int ret = 0;
-    char rcv_buf[BUF_SIZE] = "";
-    char snd_buf[BUF_SIZE] = "";
+    struct epoll_event event = {};
+    
+    event.data.fd = fd;
+    event.events = events;
 
-    ret = recv(confd, rcv_buf, sizeof(rcv_buf), 0);
-    if(ret <= 0){
-        LOG("recv error.%s .errno=%d  \n", strerror(errno), errno);
-        //goto out;
-    }
-    LOG("recv:%s \n", rcv_buf);
-    //bzero(snd_buf, sizeof(snd_buf));
-    sprintf(snd_buf, "Respon from from server seq. \n");
-    ret = send(confd, snd_buf, sizeof(snd_buf), 0);
-    if(ret <= 0){
-        LOG("recv error.%s \n", strerror(errno));
-    }
-
-    return 0;
+    return epoll_ctl(epfd, op, fd, &event);
 }
 
 
@@ -119,6 +122,8 @@ int main(int argc, char *argv[])
     
     LOG("Server start !\n");
     signal(SIGTERM, sig_hdl);
+    /* 为了防止向Client 已经关闭的描述符写操内核产生SIGPIPE信号导致服务器退出，需要对SIGPIP信号忽略 */
+    signal(SIGPIPE,SIG_IGN);
     
     if((sfd = socket(PF_INET, SOCK_STREAM, 0)) < 0){
         LOG("socker error.%s \n", strerror(errno));
@@ -150,36 +155,37 @@ int main(int argc, char *argv[])
     // int epoll_wait(int epfd,struct epoll_event*events,int maxevents,int timeout);
     
     
-    int epfd = epoll_create(5);
-
-    event.data.fd = sfd;
-    event.events = EPOLLIN | EPOLLOUT;
-    ret = epoll_ctl(epfd, EPOLL_CTL_ADD, sfd,  &event);   
-    num = epoll_wait(epfd, events, MAX_EVENT_NUMBER, -1);
+    int epfd = epoll_create(5);  
+    if((ret = event_ctl(epfd, EPOLL_CTL_ADD, sfd, EPOLLIN))){
+        LOG("event_ctl error.%s \n", strerror(errno)); 
+        goto out;
+    }
     
     
     while(!stop) { 
-        
+        num = epoll_wait(epfd, events, MAX_EVENT_NUMBER, -1);
+        //LOG("event num:%d \n", num);
         for(i=0; i<num; i++){
             if(events[i].data.fd == sfd){
                 confd = accept(sfd, (struct sockaddr*)&client_addr, &addr_len);
                 if(confd < 0){
                     LOG("accept error.%s \n", strerror(errno));
-                    goto out;
+                    continue;
+                    //新的连接失败，不退出，保证已连接客户端继续工作
+                    //goto out;
                 }
                 inet_ntop(AF_INET, &client_addr.sin_addr, peer_ip, INET_ADDRSTRLEN);
                 port = ntohs(client_addr.sin_port);
-                LOG("accept confd=%d --> %s:%d  \n", confd, peer_ip, port);
-                
-                bzero(&event, sizeof(struct epoll_event));
-                event.data.fd = confd;
-                event.events = EPOLLIN | EPOLLOUT;
-                epoll_ctl(epfd, EPOLL_CTL_ADD, confd, &event);
+                LOG("accept confd=%d --> %s:%d  \n", confd, peer_ip, port); 
+                setnoblocking(confd);
+                event_ctl(epfd, EPOLL_CTL_ADD, confd, EPOLLIN|EPOLLET);
             } else {
-                LOG("event coming... fd=%d \n", event.data.fd);
-                do_worker(confd);
+                if(events[i].events[i] & EPOLLIN){
+                    do_worker_et(events[i].data.fd);
+                    //do_worker_lt(events[i].data.fd);
+                }
+                
             }
-            
         }
     }
     
@@ -192,4 +198,104 @@ out:
         close (sfd);
     }
     return ret;
+}
+
+
+int do_worker_lt(int confd)
+{
+    int ret = 0;
+    char rcv_buf[BUF_SIZE] = "";
+    char snd_buf[BUF_SIZE] = "";
+
+    /* 默认工作在 LT模式（电平触发）只要socket缓存中还有数据未被读出，事件就会触发 */
+    ret = recv(confd, rcv_buf, sizeof(rcv_buf), 0);
+    if(ret <= 0){
+        /*对于非阻塞IO， 下面的条件成立表示数据已经全部读取完毕。 此后， epoll就能再次触发sockfd上的EPOLLIN事件， 以驱动下一次读操作*/
+        if((errno==EAGAIN)||(errno==EWOULDBLOCK)){
+            printf("read later\n");
+            goto out;
+        }
+        event_ctl(confd, EPOLL_CTL_DEL, confd, EPOLLIN);
+        close(confd);
+        LOG("recv error.%s .errno=%d  \n", strerror(errno), errno);
+        goto out;
+    }
+    LOG("recv:%s  fd=%d \n", rcv_buf, confd);
+    //bzero(snd_buf, sizeof(snd_buf));
+    sprintf(snd_buf, "Respon from from server seq. \n");
+    ret = send(confd, snd_buf, sizeof(snd_buf), 0);
+    if(ret <= 0){
+        LOG("recv error.%s \n", strerror(errno));
+    }
+
+out:
+    return 0;
+}
+
+int do_worker_et(int confd)
+{
+    int ret = 0;
+    char rcv_buf[BUF_SIZE] = "";
+    char snd_buf[BUF_SIZE] = "";
+
+     /* 工作ET模式,事件不会被重复触发，所以需要通过循环确保把缓存中数据完全读出 */
+     while(1){
+        bzero(rcv_buf, BUF_SIZE);
+        ret = recv(confd, rcv_buf, sizeof(rcv_buf), 0);
+        if(ret <= 0){
+            /*对于非阻塞IO， 下面的条件成立表示数据已经全部读取完毕。 此后，epoll就能再次触发sockfd上的EPOLLIN事件，以驱动下一次读操作*/
+            if((errno==EAGAIN)||(errno==EWOULDBLOCK)){
+                //printf("read later ret=%d \n", ret);
+                break;
+            }
+            if(ret == 0){
+                ret = event_ctl(confd, EPOLL_CTL_DEL, confd, EPOLLIN);
+                if(ret){
+                    LOG("event_ctl del error.%s\n", strerror(errno));
+                }
+                close(confd);
+                LOG("close confd=%d \n", confd);
+            }
+            
+            LOG("recv error.%s .errno=%d ret=%d \n", strerror(errno), errno, ret);
+            break;
+        }
+        LOG("recv:%s  fd=%d \n", rcv_buf, confd);
+     }
+    
+    bzero(snd_buf, sizeof(snd_buf));
+    sprintf(snd_buf, "Respon from from server seq. \n");
+    ret = send(confd, snd_buf, sizeof(snd_buf), 0);
+    if(ret <= 0){
+        LOG("recv error.%s \n", strerror(errno));
+    }
+
+out:
+    return 0;
+}
+
+int setnoblocking(int fd)
+{
+    int new_opt = 0;
+    int old_opt = 0;
+    
+    old_opt = fcntl(fd, F_GETFL);
+    new_opt = old_opt|O_NONBLOCK;
+    
+    fcntl(fd, F_SETFL, new_opt);
+    
+    return 0;
+}
+
+/* EPOLLONESHOT 可以防止ET模式下，一个线程在读取数据过程中，
+ *因数据到达而引发的再次触发，导致连个线程同时操作一个socket问题 
+*/
+void reset_oneshot(int epfd, int fd)
+{
+    struct epoll_event event = {};
+    
+    event.data.fd = fd;
+    event.events = EPOLLIN|EPOLLONESHOT|O_NONBLOCK;
+
+    return epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &event);
 }

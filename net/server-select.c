@@ -118,6 +118,9 @@ int main(int argc, char *argv[])
     LOG("Server start !\n");
     signal(SIGTERM, sig_hdl);
     
+     /* 为了防止向Client 已经关闭的描述符写操内核产生SIGPIPE信号导致服务器退出，需要对SIGPIP信号忽略 */
+    signal(SIGPIPE,SIG_IGN);
+    
     if((sfd = socket(PF_INET, SOCK_STREAM, 0)) < 0){
         LOG("socker error.%s \n", strerror(errno));
         return -1;
